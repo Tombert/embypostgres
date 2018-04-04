@@ -1,0 +1,83 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Roku Thumbnails</title>
+</head>
+<body>
+    <div data-role="page" class="page type-interior pluginConfigurationPage rokuConfigurationPage" data-require="emby-button,emby-select,emby-checkbox,emby-linkbutton">
+
+        <div data-role="content">
+            <div class="content-primary">
+
+                <form class="rokuConfigurationForm">
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkSaveBifLocal" />
+                            <span>Save thumbnail files within media folders</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">This will enable easier storage management of the thumbnail files. Thumbnail files will be saved with a .bif extension.</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkEnableDuringScan" />
+                            <span>Create thumbnails when videos are discovered</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">This will make thumbnails available sooner but will result in longer library scans. Thumbnails are also created during a scheduled task.</div>
+                        <div class="fieldDescription checkboxFieldDescription">To configure the scheduled task, see <a is="emby-linkbutton" class="button-link" href="scheduledtasks.html">scheduled tasks</a>.</div>
+                    </div>
+
+                    <br />
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+
+            (function () {
+
+                var pluginId = "0417264b-5a93-4ad0-a1f0-b87569b7cf80";
+
+                $('.rokuConfigurationPage').on('pageshow', function (event) {
+
+                    var page = this;
+
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+
+                        page.querySelector('#chkEnableDuringScan').checked = config.EnableExtractionDuringLibraryScan;
+                        page.querySelector('#chkSaveBifLocal').checked = config.EnableLocalMediaFolderSaving;
+
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                $('.rokuConfigurationForm').off('submit.plugin').on('submit.plugin', function (e) {
+
+                    Dashboard.showLoadingMsg();
+
+                    var form = this;
+
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+
+                        config.EnableExtractionDuringLibraryScan = form.querySelector('#chkEnableDuringScan').checked;
+
+                        config.EnableLocalMediaFolderSaving = form.querySelector('#chkSaveBifLocal').checked;
+
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
+                    });
+
+                    return false;
+                });
+
+            })();
+
+        </script>
+    </div>
+</body>
+</html>
