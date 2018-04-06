@@ -1,12 +1,11 @@
-Emby.Plugins
-====================
+Postgres Emby
+=============
 
-This repository contains many of the plugins that are built and maintained by the Emby community.
+Emby is great, but there is one *severe* limitation with it: the direct use of SQLite, making it impossible to spread across multiple nodes, completely eliminating the possibility of horizontal scaling. 
 
-Each of the projects has a build event that copies it's output to the programdata/plugins folder. 
+My attempt to fix this is to extend the already-existent database interfaces by the emby team and write a driver to talk to PostgreSQL.  
 
-By default this assumes you have the server repository side by side in a folder called 'Emby.dev'. If this is not the case, or if you've installed the server than you'll need to update the build events manually in order to test code changes.
-
+I decided to write this in F# for presumably masochistic reasons. 
 
 ## More Information ##
 
