@@ -4,6 +4,7 @@ open MediaBrowser.Controller.Entities
 open MediaBrowser.Controller.Persistence
 open MediaBrowser.Model.IO
 open MediaBrowser.Model.Logging
+open MediaBrowser.Model.Entities
 open MediaBrowser.Model.Serialization
 open System.Data.Common
 open System.Threading
@@ -11,6 +12,12 @@ open System.Threading
 open Npgsql
 
 module SqlHelpers =
+    let ToDisplayPreference (js: IJsonSerializer) (reader: DbDataReader) = seq {
+        while reader.Read() do
+            let user = js.DeserializeFromString<DisplayPreferences>  (reader.GetString(0))
+            yield user
+            }
+
     let ToUser (js: IJsonSerializer) (reader : DbDataReader) = seq {
         //let blah = new User()
         while reader.Read() do
@@ -77,8 +84,6 @@ module UserQueryHandlers =
         return! cmd.ExecuteNonQueryAsync() |> Async.AwaitTask |> Async.Catch
         }
 
-        
-
     let saveUserData (conn: NpgsqlConnection) (userId : System.Guid) (key) (uid: UserItemData) (cancellationToken : CancellationToken) = async {
         if isNull uid then
             failwith "Null user item data in save"
@@ -141,7 +146,6 @@ module UserQueryHandlers =
         }
 
 
-    // IUserRepository functions
     let saveUser (conn: NpgsqlConnection) (js : IJsonSerializer) (user: User) (cancellationToken: CancellationToken) = async {
         cancellationToken.ThrowIfCancellationRequested()
         if isNull user then
@@ -170,16 +174,37 @@ module UserQueryHandlers =
         let query = "select guid, data from users"
         use cmd = new NpgsqlCommand(query, conn)
         let! result = cmd.ExecuteReaderAsync() |> Async.AwaitTask
-        return 
-          result 
-          |> SqlHelpers.ToUser js 
-        //return result
-
+        return result |> SqlHelpers.ToUser js
         }
 
-    // let getAllUsers (conn: NpgsqlConnection) =
-    //     let cmd = new Npgsql("", conn)
-    //     ()
+module DisplayPreferenceHandlers = 
+    let getAllDisplayPreferences conn js (userId: System.Guid) = async {
+        let query = """select id, userid, client, data from userdisplaypreferences where userid = @userid"""
+        use cmd = new NpgsqlCommand(query, conn)
+        cmd.Parameters.AddWithValue("userid", userId) |> ignore
+        let! result = cmd.ExecuteReaderAsync() |> Async.AwaitTask
+        return SqlHelpers.ToDisplayPreference js result
+
+
+
+
+    }
+
+    let saveDisplayPreferences (conn: NpgsqlConnection) (js: IJsonSerializer) (displayPreferences : DisplayPreferences) (userId: string) (client: string) (cancellationToken: CancellationToken) = async {
+        cancellationToken.ThrowIfCancellationRequested()
+        let query = """insert into userdisplaypreferences (id, userid, client, data) values (@id, @userid, @client, @data) on conflict update; """
+        let datastring = js.SerializeToString displayPreferences
+        cancellationToken.ThrowIfCancellationRequested()
+        use cmd = new NpgsqlCommand(query, conn)
+        cmd.Parameters.AddWithValue("userid", userId) |> ignore
+        cmd.Parameters.AddWithValue("id", displayPreferences.Id) |> ignore
+        cmd.Parameters.AddWithValue("client", client) |> ignore
+        cmd.Parameters.AddWithValue("data", datastring) |> ignore
+        let! res = cmd.ExecuteNonQueryAsync() |> Async.AwaitTask
+        return ()
+        }
+
+
 
 type PostgresDisplayPreferencesRepository(connectionString, js : IJsonSerializer) =
     let conn = new NpgsqlConnection(connectionString)
@@ -187,8 +212,13 @@ type PostgresDisplayPreferencesRepository(connectionString, js : IJsonSerializer
     interface IDisplayPreferencesRepository with
         member this.Name with get () = "Postgres"
         member this.Dispose() = conn.Dispose()
-        member this.SaveDisplayPreferences (displayPreferences, userid, client, cancellationToken) = failwith "Placeholder for savedisplaypreferences"
-        member this.GetAllDisplayPreferences (userId) = failwith "placeholder for getalldisplaypreferences"
+        member this.SaveDisplayPreferences (displayPreferences, userid, client, cancellationToken) =
+            DisplayPreferenceHandlers.saveDisplayPreferences conn js displayPreferences userid client cancellationToken |> Async.RunSynchronously
+
+        member this.GetAllDisplayPreferences (userId) =
+            DisplayPreferenceHandlers.getAllDisplayPreferences conn js userId |> Async.RunSynchronously
+
+            //failwith "placeholder for getalldisplaypreferences"
         member this.SaveAllDisplayPreferences (displayPreferences, userid, cancellationToken) = failwith "placeholder for savealldisplaypreferences"
         member this.GetDisplayPreferences (displayPreferenceId, userid, client) = failwith "placeholder for getdisplaypreferences"
 
