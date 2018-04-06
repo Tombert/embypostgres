@@ -1,11 +1,25 @@
 ﻿namespace PostgresBackend
+open MediaBrowser.Controller
+open MediaBrowser.Controller.Entities
 open MediaBrowser.Controller.Persistence
-open MediaBrowser.Controller.Entities;
+open MediaBrowser.Model.IO
+open MediaBrowser.Model.Logging
+open MediaBrowser.Model.Serialization
 open System.Data.Common
 open System.Threading
+
 open Npgsql
 
 module SqlHelpers =
+    let ToUser (js: IJsonSerializer) (reader : DbDataReader) = seq {
+        //let blah = new User()
+        while reader.Read() do
+            let user = js.DeserializeFromString<User> (reader.GetString(1))
+            let userid = reader.GetString(1)
+            user.Id <- System.Guid userid
+            yield user
+        }
+
     let toUserData (reader : DbDataReader) = seq {
         while reader.Read() do
            let uid = new UserItemData()
@@ -125,6 +139,63 @@ module QueryHandlers =
         let! res = cmd.ExecuteReaderAsync()  |> Async.AwaitTask
         return SqlHelpers.toUserData res
         }
+
+
+    // IUserRepository functions
+    let saveUser (conn: NpgsqlConnection) (js : IJsonSerializer) (user: User) (cancellationToken: CancellationToken) = async {
+        cancellationToken.ThrowIfCancellationRequested()
+        if isNull user then
+            failwith "User is null"
+        let jsonString = js.SerializeToString user
+
+        cancellationToken.ThrowIfCancellationRequested()
+        use cmd = new NpgsqlCommand ("insert into users (guid, data) values (@Guid, @Data) on conflict update", conn)
+        cmd.Parameters.AddWithValue("Guid", user.Id) |> ignore
+        cmd.Parameters.AddWithValue("Data", jsonString) |> ignore
+        let! result  = cmd.ExecuteNonQueryAsync() |> Async.AwaitTask
+
+        return ()
+        }
+    let deleteUser (conn: NpgsqlConnection) (user: User) (cancellationToken: CancellationToken) = async {
+        cancellationToken.ThrowIfCancellationRequested()
+        let query = "delete from users where guid=@guid"
+        use cmd = new NpgsqlCommand(query, conn)
+        cmd.Parameters.AddWithValue("guid", user.Id) |> ignore
+        let! result = cmd.ExecuteNonQueryAsync() |> Async.AwaitTask
+        return ()
+        }
+
+
+    let retrieveAllUsers (conn: NpgsqlConnection) (js : IJsonSerializer) = async {
+        let query = "select guid, data from users"
+        use cmd = new NpgsqlCommand(query, conn)
+        let! result = cmd.ExecuteReaderAsync() |> Async.AwaitTask
+        return 
+          result 
+          |> SqlHelpers.ToUser js 
+        //return result
+
+        }
+
+    // let getAllUsers (conn: NpgsqlConnection) =
+    //     let cmd = new Npgsql("", conn)
+    //     ()
+
+
+type PostgresUserLibrary(connectionString, js : IJsonSerializer) =
+    let conn = new NpgsqlConnection(connectionString)
+    do conn.Open()
+    interface IUserRepository with
+        member this.Dispose () = conn.Dispose()
+        member this.Name with get() = "Postgres"
+        member this.DeleteUser (user: User, cancellationToken : CancellationToken) =
+            QueryHandlers.deleteUser conn user cancellationToken |> Async.RunSynchronously
+        member this.SaveUser(user: User, cancellationToken : CancellationToken) =
+            QueryHandlers.saveUser conn js user cancellationToken  |> Async.RunSynchronously
+            ()
+        member this.RetrieveAllUsers () =
+            QueryHandlers.retrieveAllUsers conn js |> Async.RunSynchronously
+
 
 type PostgresUserDataLibrary(connectionString) =
     let conn = new NpgsqlConnection(connectionString)
