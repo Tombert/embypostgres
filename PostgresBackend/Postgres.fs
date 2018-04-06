@@ -58,7 +58,7 @@ module SqlHelpers =
            yield uid
         }
 
-module QueryHandlers =
+module UserQueryHandlers =
     let persistUserData (conn: NpgsqlConnection) (userId: System.Guid) (key: string) (uid: UserItemData) (cancellationToken: CancellationToken) = async {
         cancellationToken.ThrowIfCancellationRequested()
         let query = """ insert into userdata (key, userId, rating,played,playCount,isFavorite,playbackPositionTicks,lastPlayedDate,AudioStreamIndex,SubtitleStreamIndex) values (@key, @userId, @rating,@played,@playCount,@isFavorite,@playbackPositionTicks,@lastPlayedDate,@AudioStreamIndex,@SubtitleStreamIndex) on conflict update """
@@ -181,6 +181,16 @@ module QueryHandlers =
     //     let cmd = new Npgsql("", conn)
     //     ()
 
+type PostgresDisplayPreferencesRepository(connectionString, js : IJsonSerializer) =
+    let conn = new NpgsqlConnection(connectionString)
+    do conn.Open()
+    interface IDisplayPreferencesRepository with
+        member this.Name with get () = "Postgres"
+        member this.Dispose() = conn.Dispose()
+        member this.SaveDisplayPreferences (displayPreferences, userid, client, cancellationToken) = failwith "Placeholder for savedisplaypreferences"
+        member this.GetAllDisplayPreferences (userId) = failwith "placeholder for getalldisplaypreferences"
+        member this.SaveAllDisplayPreferences (displayPreferences, userid, cancellationToken) = failwith "placeholder for savealldisplaypreferences"
+        member this.GetDisplayPreferences (displayPreferenceId, userid, client) = failwith "placeholder for getdisplaypreferences"
 
 type PostgresUserLibrary(connectionString, js : IJsonSerializer) =
     let conn = new NpgsqlConnection(connectionString)
@@ -189,12 +199,12 @@ type PostgresUserLibrary(connectionString, js : IJsonSerializer) =
         member this.Dispose () = conn.Dispose()
         member this.Name with get() = "Postgres"
         member this.DeleteUser (user: User, cancellationToken : CancellationToken) =
-            QueryHandlers.deleteUser conn user cancellationToken |> Async.RunSynchronously
+            UserQueryHandlers.deleteUser conn user cancellationToken |> Async.RunSynchronously
         member this.SaveUser(user: User, cancellationToken : CancellationToken) =
-            QueryHandlers.saveUser conn js user cancellationToken  |> Async.RunSynchronously
+            UserQueryHandlers.saveUser conn js user cancellationToken  |> Async.RunSynchronously
             ()
         member this.RetrieveAllUsers () =
-            QueryHandlers.retrieveAllUsers conn js |> Async.RunSynchronously
+            UserQueryHandlers.retrieveAllUsers conn js |> Async.RunSynchronously
 
 
 type PostgresUserDataLibrary(connectionString) =
@@ -204,7 +214,7 @@ type PostgresUserDataLibrary(connectionString) =
         member this.Name with get() = "Postgres"
         member this.GetAllUserData(userId:System.Guid) =
             userId
-            |> QueryHandlers.getAllUserData conn
+            |> UserQueryHandlers.getAllUserData conn
             |> Async.RunSynchronously
             |> System.Collections.Generic.List
 
@@ -212,16 +222,16 @@ type PostgresUserDataLibrary(connectionString) =
             conn.Dispose()
 
         member this.SaveAllUserData (userId: System.Guid, userData : UserItemData [], cancellationToken : CancellationToken) =
-            QueryHandlers.saveAllUserData conn userId userData cancellationToken |> Async.RunSynchronously
+            UserQueryHandlers.saveAllUserData conn userId userData cancellationToken |> Async.RunSynchronously
         member this.SaveUserData (userId: System.Guid, key: string, uid : UserItemData, cancellationToken : CancellationToken ) = 
-            QueryHandlers.saveUserData conn userId key uid cancellationToken |> Async.Ignore |> Async.RunSynchronously
+            UserQueryHandlers.saveUserData conn userId key uid cancellationToken |> Async.Ignore |> Async.RunSynchronously
         member this.GetUserData((userId: System.Guid), (key: string)) =
-            QueryHandlers.getUserData conn userId key |> Async.RunSynchronously
+            UserQueryHandlers.getUserData conn userId key |> Async.RunSynchronously
         member this.GetUserData(userId : System.Guid, keys : System.Collections.Generic.List<string>) =
             let possibleValue = Seq.tryHead keys
             match possibleValue with
             | None -> failwith "No data in list of keys"
             | Some x ->
-                QueryHandlers.getUserData conn userId x |> Async.RunSynchronously
+                UserQueryHandlers.getUserData conn userId x |> Async.RunSynchronously
 
 
