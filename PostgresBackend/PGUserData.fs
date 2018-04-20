@@ -7,7 +7,33 @@ open Npgsql
 open System.Threading
 type PostgresUserDataLibrary(connectionString) =
     let conn = new NpgsqlConnection(connectionString)
+    let queries = 
+        [|
+            "create table if not exists userdata (key nvarchar not null, userId GUID not null, rating float null, played bit not null, playCount int not null, isFavorite bit not null, playbackPositionTicks bigint not null, lastPlayedDate datetime null)"
+
+            "create table if not exists DataSettings (IsUserDataImported bit)"
+
+            "drop index if exists idx_userdata"
+            "drop index if exists idx_userdata1"
+            "drop index if exists idx_userdata2"
+            "drop index if exists userdataindex1"
+
+            "create unique index if not exists userdataindex on userdata (key, userId)"
+            "create index if not exists userdataindex2 on userdata (key, userId, played)"
+            "create index if not exists userdataindex3 on userdata (key, userId, playbackPositionTicks)"
+            "create index if not exists userdataindex4 on userdata (key, userId, isFavorite)"
+
+         |]
     do conn.Open()
+       queries
+       |> Array.map
+           (fun x -> async {
+               use cmd = new NpgsqlCommand(x, conn)
+               return! cmd.ExecuteNonQueryAsync() |> Async.AwaitTask
+            })
+       |> Async.Parallel
+       |> Async.Ignore
+       |> Async.RunSynchronously
     interface IUserDataRepository with
         member this.Name with get() = "Postgres"
         member this.GetAllUserData(userId:System.Guid) =
