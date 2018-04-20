@@ -13,7 +13,7 @@
     <Compile Include="PGUserLibrary.fs" />
     <Compile Include="PGUserData.fs" />
     <Compile Include="PGDisplayPreferences.fs" />
-    <Compile Include="Postgres.fs" />
+    <Compile Include="PGAuthentication.fs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Configuration\" />

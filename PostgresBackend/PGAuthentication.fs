@@ -1,23 +1,14 @@
 ﻿namespace PostgresBackend
-open MediaBrowser.Controller
-open MediaBrowser.Controller.Entities
-open MediaBrowser.Controller.Persistence
-open MediaBrowser.Model.Querying
-open MediaBrowser.Model.IO
-open MediaBrowser.Model.Logging
-open MediaBrowser.Model.Entities
-open MediaBrowser.Model.Serialization
-open MediaBrowser.Controller.Security
-open System.Data.Common
-open System.Globalization
+
 open System.Collections.Generic
+open MediaBrowser.Controller.Security
+open System.Globalization
+open System.Data
+open System.Data.Common
+open MediaBrowser.Model.Querying
 open System.Threading
-
+open System.Collections.Generic
 open Npgsql
-
-
-
-
 module AuthenticationHandlers =
     let BaseSelectText = "select Id, AccessToken, DeviceId, AppName, AppVersion, DeviceName, UserId, IsActive, DateCreated, DateRevoked from AccessTokens";
     let update (conn: NpgsqlConnection) (info: AuthenticationInfo) = async {
@@ -174,8 +165,7 @@ module AuthenticationHandlers =
         }
 
 
-
-
+        
 type PostgresAuthenticationRepository (accessToken: string, id: string) =
     let connectionString = ""
     let conn = new NpgsqlConnection(connectionString)
@@ -215,3 +205,4 @@ type PostgresAuthenticationRepository (accessToken: string, id: string) =
             |> AuthenticationHandlers.create conn
             |> Async.RunSynchronously
             ()
+
