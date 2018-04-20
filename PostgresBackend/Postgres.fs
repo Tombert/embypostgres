@@ -9,6 +9,7 @@ open MediaBrowser.Model.Entities
 open MediaBrowser.Model.Serialization
 open MediaBrowser.Controller.Security
 open System.Data.Common
+open System.Globalization
 open System.Collections.Generic
 open System.Threading
 
@@ -65,7 +66,7 @@ module UserQueryHandlers =
     let persistUserData (conn: NpgsqlConnection) (userId: System.Guid) (key: string) (uid: UserItemData) (cancellationToken: CancellationToken) = async {
         cancellationToken.ThrowIfCancellationRequested()
         let query = """ insert into userdata (key, userId, rating,played,playCount,isFavorite,playbackPositionTicks,lastPlayedDate,AudioStreamIndex,SubtitleStreamIndex) values (@key, @userId, @rating,@played,@playCount,@isFavorite,@playbackPositionTicks,@lastPlayedDate,@AudioStreamIndex,@SubtitleStreamIndex) on conflict update """
-        let cmd = new NpgsqlCommand(query, conn)
+        use cmd = new NpgsqlCommand(query, conn)
         cmd.Parameters.AddWithValue("key", key) |> ignore
         cmd.Parameters.AddWithValue("userId", userId) |> ignore
         cmd.Parameters.AddWithValue("rating", uid.Rating) |> ignore
@@ -259,28 +260,7 @@ module AuthenticationHandlers =
                 yield "UserId not null"
             else
                 yield "UserId is null"
-         
     }
-
-
-
-    let get conn (query: AuthenticationInfoQuery) =
-        let startIndex =
-            query.StartIndex
-            |> Option.ofNullable
-            |> (fun x -> defaultArg x 0)
-
-        let whereTextWithoutPaging =
-            query
-            |> getWheres
-            |> String.concat " AND "
-
-        let finalText =
-            if startIndex > 0 then ()
-
-
-        ()
-
 
     let rec getQueryHelper (reader: DbDataReader) = seq {
         while reader.Read() do
@@ -330,11 +310,55 @@ module AuthenticationHandlers =
             yield ai
     }
 
+
+    let get conn (query: AuthenticationInfoQuery) = async {
+        let res = new QueryResult<AuthenticationInfo>()
+        let startIndex =
+            query.StartIndex
+            |> Option.ofNullable
+            |> (fun x -> defaultArg x 0)
+
+        let whereTextWithoutPaging =
+            query
+            |> getWheres
+            |> String.concat " AND "
+
+        let pageText =
+            if startIndex > 0 then 
+                let w = sprintf "Id NOT IN (SELECT Id FROM AccessTokens %s ORDER BY DateCreated LIMIT %i)" whereTextWithoutPaging startIndex
+                sprintf "%s AND %s"  whereTextWithoutPaging w
+            else
+                whereTextWithoutPaging
+        let pageTextWithOrder = sprintf "%s ORDER BY DateCreated" pageText //  [| pageText; "ORDER BY"; "DateCreated" |] |> String.concat " "
+        let finalClauses =
+            if query.Limit.HasValue then
+                sprintf "%s LIMIT %s" pageTextWithOrder (query.Limit.Value.ToString(new CultureInfo("en-US")))
+            else
+                pageTextWithOrder
+
+        let finalQuery = sprintf "%s %s" BaseSelectText finalClauses
+        use countCommand = new NpgsqlCommand ((sprintf "select count (Id) from AccessTokens %s" whereTextWithoutPaging), conn)
+        use! result = countCommand.ExecuteReaderAsync() |> Async.AwaitTask 
+        do! result.ReadAsync() |> Async.AwaitTask |> Async.Ignore
+        let count = result.GetInt32(0)
+        use cmd = new NpgsqlCommand(finalQuery, conn)
+        use! reader = cmd.ExecuteReaderAsync() |> Async.AwaitTask
+        let yo = getQueryHelper reader
+        res.Items <- yo |> Seq.toArray
+
+
+
+
+        return res
+        }
+
+
+
     let getString conn (id: string) = async {
         if isNull id || id = "" then
             failwith "Null or empty in getstring function"
         let query = sprintf "%s where Id=@Id" BaseSelectText
-        let cmd = new NpgsqlCommand(query, conn)
+        use cmd = new NpgsqlCommand(query, conn)
         cmd.Parameters.AddWithValue("Id",System.Guid(id)) |> ignore
         let! res = cmd.ExecuteReaderAsync() |> Async.AwaitTask
         let result =
@@ -367,11 +391,9 @@ type PostgresAuthenticationRepository (accessToken: string, id: string) =
             conn.Dispose()
     interface IAuthenticationRepository with
         member this.Get(query: AuthenticationInfoQuery) : QueryResult<AuthenticationInfo> =
-
-
-
-
-            failwith ""
+            query
+            |> AuthenticationHandlers.get conn
+            |> Async.RunSynchronously
 
         member this.Update(info: AuthenticationInfo, cancellationToken: CancellationToken) =
             cancellationToken.ThrowIfCancellationRequested()
