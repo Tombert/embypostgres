@@ -1,9 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="mediabrowser.server.core" Version="3.3.29" />
     <PackageReference Include="Npgsql" Version="3.2.7" />
@@ -11,9 +9,10 @@
   <ItemGroup>
     <Compile Include="Configuration\PluginConfiguration.fs" />
     <Compile Include="Plugin.fs" />
+    <Compile Include="SqlHelper.fs" />
+    <Compile Include="PGUserLibrary.fs" />
     <Compile Include="Postgres.fs" />
   </ItemGroup>
-
   <ItemGroup>
     <Folder Include="Configuration\" />
     <Folder Include="SqlHelpters\" />
