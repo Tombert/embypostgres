@@ -2,11 +2,14 @@
 open MediaBrowser.Controller
 open MediaBrowser.Controller.Entities
 open MediaBrowser.Controller.Persistence
+open MediaBrowser.Model.Querying
 open MediaBrowser.Model.IO
 open MediaBrowser.Model.Logging
 open MediaBrowser.Model.Entities
 open MediaBrowser.Model.Serialization
+open MediaBrowser.Controller.Security
 open System.Data.Common
+open System.Collections.Generic
 open System.Threading
 
 open Npgsql
@@ -26,6 +29,7 @@ module SqlHelpers =
             user.Id <- System.Guid userid
             yield user
         }
+
 
     let toUserData (reader : DbDataReader) = seq {
         while reader.Read() do
@@ -74,7 +78,7 @@ module UserQueryHandlers =
         cmd.Parameters.AddWithValue("userId", userId) |> ignore
         cmd.Parameters.AddWithValue("rating", uid.Rating) |> ignore
         cmd.Parameters.AddWithValue("played", uid.Played) |> ignore
-        cmd.Parameters.AddWithValue("playCount", uid.PlayCount) |> ignore
+        cmd.Parameters.AddWithValue("playCount", uid.PlayCount) |> ignore      
         cmd.Parameters.AddWithValue("isFavorite", uid.IsFavorite) |> ignore
         cmd.Parameters.AddWithValue("playBackpositionticks", uid.PlaybackPositionTicks) |> ignore
         cmd.Parameters.AddWithValue("lastPlayedDate", uid.LastPlayedDate) |> ignore
@@ -218,6 +222,181 @@ module DisplayPreferenceHandlers =
         return SqlHelpers.ToDisplayPreference js result
         }
 
+module AuthenticationHandlers =
+    let BaseSelectText = "select Id, AccessToken, DeviceId, AppName, AppVersion, DeviceName, UserId, IsActive, DateCreated, DateRevoked from AccessTokens";
+    let update (conn: NpgsqlConnection) (info: AuthenticationInfo) = async {
+        let query = "insert into AccessTokens (Id, AccessToken, DeviceId, AppName, AppVersion, DeviceName, UserId, IsActive, DateCreated, DateRevoked) values (@Id, @AccessToken, @DeviceId, @AppName, @AppVersion, @DeviceName, @UserId, @IsActive, @DateCreated, @DateRevoked) on conflict update"
+        let cmd = new NpgsqlCommand(query, conn)
+        let dateRevoked =
+            if info.DateRevoked.HasValue then
+                Some (info.DateRevoked.Value)
+            else None
+
+            |> Option.toNullable
+        cmd.Parameters.AddWithValue("Id", System.Guid(info.Id).ToString("N")) |> ignore
+        cmd.Parameters.AddWithValue("AccessToken", info.AccessToken) |> ignore
+        cmd.Parameters.AddWithValue("DeviceId", info.DeviceId) |> ignore
+        cmd.Parameters.AddWithValue("AppName", info.AppName) |> ignore
+        cmd.Parameters.AddWithValue("AppVersion", info.AppVersion) |> ignore
+        cmd.Parameters.AddWithValue("DeviceName", info.DeviceName) |> ignore
+        cmd.Parameters.AddWithValue("UserId", info.UserId) |> ignore
+        cmd.Parameters.AddWithValue("IsActive", info.IsActive) |> ignore
+        cmd.Parameters.AddWithValue("DateCreated", info.DateCreated) |> ignore
+        cmd.Parameters.AddWithValue("DateRevoked", dateRevoked) |> ignore
+        let! res = cmd.ExecuteNonQueryAsync() |> Async.AwaitTask 
+        return ()
+    }
+    let create conn (info : AuthenticationInfo) = async {
+        let newId = System.Guid.NewGuid().ToString("N")
+        info.Id <- newId
+        return! update conn info 
+    }
+
+    let getWheres (query: AuthenticationInfoQuery) = seq {
+        yield "1=1"
+        if not (isNull query.AccessToken ) && query.AccessToken <> "" then
+            yield "AccessToken=@AccessToken" 
+
+        if not (isNull query.UserId) && query.UserId <> "" then
+            yield "UserId=@UserId"
+
+        if not (isNull query.DeviceId) && query.DeviceId <> "" then
+            yield "DeviceId=@DeviceId"
+        if query.IsActive.HasValue then
+            yield "IsActive=@IsActive"
+
+        if query.HasUser.HasValue then
+            if query.HasUser.Value then
+                yield "UserId not null"
+            else
+                yield "UserId is null"
+         
+    }
+
+
+
+    let get conn (query: AuthenticationInfoQuery) =
+        let startIndex =
+            query.StartIndex
+            |> Option.ofNullable
+            |> (fun x -> defaultArg x 0)
+
+        let whereTextWithoutPaging =
+            query
+            |> getWheres
+            |> String.concat " AND "
+
+        let finalText =
+            if startIndex > 0 then ()
+
+
+        ()
+
+
+    let rec getQueryHelper (reader: DbDataReader) = seq {
+        while reader.Read() do
+            let id = reader.GetString(0)
+            let myId = System.Guid(id).ToString("N")
+            let accessToken = reader.GetString(1)
+            let ai = AuthenticationInfo(Id = id, AccessToken = accessToken)
+
+            let deviceId = try Some ( reader.GetString(2)) with | ex -> None
+            let appName = try Some ( reader.GetString(3)) with | ex -> None
+            let appVersion = try Some ( reader.GetString(4)) with | ex -> None
+            let deviceName = try Some ( reader.GetString(5)) with | ex -> None
+            let userId = try Some ( reader.GetString(6)) with | ex -> None
+            let isActive = try Some ( reader.GetBoolean(7)) with | ex -> None
+            let dateCreated = try Some ( reader.GetDateTime(8) ) with | ex -> None
+            let dateRevoked = try Some ( reader.GetDateTime(9) ) with | ex -> None
+
+            match deviceId with
+            | Some x ->
+                if not (isNull x) then
+                    ai.DeviceId <- x
+            | None -> ()
+
+            match appName with
+            | Some x ->
+                if not (isNull x) then
+                    ai.AppName <- x
+            | None -> ()
+
+            match appVersion with
+            | Some x ->
+                if not (isNull x) then
+                    ai.AppVersion <- x
+            | None -> ()
+
+            match deviceName with
+            | Some x ->
+                if not (isNull x) then
+                    ai.DeviceName <- x
+            | None -> ()
+
+            match userId with
+            | Some x ->
+                if not (isNull x) then
+                    ai.UserId <- x
+            | None -> ()
+
+            match isActive with
+            | Some x -> ai.IsActive <- x
+            | None -> ()
+
+            match dateCreated with
+            | Some x -> ai.DateCreated <- x
+            | None -> ()
+
+            ai.DateRevoked <- dateRevoked |> Option.toNullable
+            yield ai
+    }
+
+    let getString conn (id: string) = async {
+        if isNull id || id = "" then
+            failwith "Null or empty in getstring function"
+        let query = sprintf "%s where Id=@Id" BaseSelectText
+        let cmd = new NpgsqlCommand(query, conn)
+        cmd.Parameters.AddWithValue("Id",System.Guid(id)) |> ignore
+        let! res = cmd.ExecuteReaderAsync() |> Async.AwaitTask
+        let result =
+            res
+            |> getQueryHelper
+            |> Seq.head
+        return result
+        }
+
+
+type PostgresAuthenticationRepository (accessToken: string, id: string) =
+    let connectionString = ""
+    let conn = new NpgsqlConnection(connectionString)
+    do conn.Open()
+    interface System.IDisposable with
+        member this.Dispose() =
+            conn.Dispose()
+    interface IAuthenticationRepository with
+        member this.Get(query: AuthenticationInfoQuery) : QueryResult<AuthenticationInfo> =
+
+
+
+
+            failwith ""
+
+        member this.Update(info: AuthenticationInfo, cancellationToken: CancellationToken) =
+            cancellationToken.ThrowIfCancellationRequested()
+            AuthenticationHandlers.update conn info |> Async.RunSynchronously
+            ()
+
+        member this.Get(id: string) : AuthenticationInfo =
+            id
+            |> AuthenticationHandlers.getString conn
+            |> Async.RunSynchronously
+
+        member this.Create (info: AuthenticationInfo, cancellationToken: CancellationToken) = 
+            info
+            |> AuthenticationHandlers.create conn
+            |> Async.RunSynchronously
+            ()
+
 type PostgresDisplayPreferencesRepository(connectionString, js : IJsonSerializer) =
     let conn = new NpgsqlConnection(connectionString)
     do conn.Open()
@@ -248,7 +427,6 @@ type PostgresUserLibrary(connectionString, js : IJsonSerializer) =
             ()
         member this.RetrieveAllUsers () =
             UserQueryHandlers.retrieveAllUsers conn js |> Async.RunSynchronously
-
 
 type PostgresUserDataLibrary(connectionString) =
     let conn = new NpgsqlConnection(connectionString)
