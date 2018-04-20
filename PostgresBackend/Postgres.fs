@@ -37,32 +37,24 @@ module SqlHelpers =
            uid.Key <- reader.GetString(0)
            uid.UserId <- reader.GetGuid(1)
            uid.Rating <-
-               if isNull (reader.GetValue(2)) then
-                   None
-               else
-                   Some (float (reader.GetFloat(2)))
+               if isNull (reader.GetValue(2)) then None
+               else Some (float (reader.GetFloat(2)))
                |> Option.toNullable
            uid.Played <- reader.GetBoolean(3)
            uid.PlayCount <- reader.GetInt32(4)
            uid.IsFavorite <- reader.GetBoolean(5)
            uid.PlaybackPositionTicks <- reader.GetInt64(6)
            uid.LastPlayedDate <-
-               if isNull ( reader.GetValue(7)) then
-                   None
-               else
-                   Some (reader.GetDateTime(7))
+               if isNull ( reader.GetValue(7)) then None
+               else Some (reader.GetDateTime(7))
                |> Option.toNullable
            uid.AudioStreamIndex <-
-               if isNull (reader.GetValue(8)) then
-                   None
-               else
-                   Some (reader.GetInt32(8))
+               if isNull (reader.GetValue(8)) then None
+               else Some (reader.GetInt32(8))
                |> Option.toNullable
            uid.SubtitleStreamIndex <- 
-              if isNull (reader.GetValue(9)) then
-                  None
-              else
-                  Some (reader.GetInt32(9))
+              if isNull (reader.GetValue(9)) then None
+              else Some (reader.GetInt32(9))
               |> Option.toNullable
 
 
@@ -89,12 +81,9 @@ module UserQueryHandlers =
         }
 
     let saveUserData (conn: NpgsqlConnection) (userId : System.Guid) (key) (uid: UserItemData) (cancellationToken : CancellationToken) = async {
-        if isNull uid then
-            failwith "Null user item data in save"
-        if userId = System.Guid.Empty then
-            failwith "Empty user id in save"
-        if isNull key || key = "" then
-            failwith "Null or empty key"
+        if isNull uid then failwith "Null user item data in save"
+        if userId = System.Guid.Empty then failwith "Empty user id in save"
+        if isNull key || key = "" then failwith "Null or empty key"
         let! result = persistUserData conn userId key uid cancellationToken
         return 
             match result with
@@ -310,33 +299,23 @@ module AuthenticationHandlers =
             let dateRevoked = try Some ( reader.GetDateTime(9) ) with | ex -> None
 
             match deviceId with
-            | Some x ->
-                if not (isNull x) then
-                    ai.DeviceId <- x
+            | Some x -> if not (isNull x) then ai.DeviceId <- x
             | None -> ()
 
             match appName with
-            | Some x ->
-                if not (isNull x) then
-                    ai.AppName <- x
+            | Some x -> if not (isNull x) then ai.AppName <- x
             | None -> ()
 
             match appVersion with
-            | Some x ->
-                if not (isNull x) then
-                    ai.AppVersion <- x
+            | Some x -> if not (isNull x) then ai.AppVersion <- x
             | None -> ()
 
             match deviceName with
-            | Some x ->
-                if not (isNull x) then
-                    ai.DeviceName <- x
+            | Some x -> if not (isNull x) then ai.DeviceName <- x
             | None -> ()
 
             match userId with
-            | Some x ->
-                if not (isNull x) then
-                    ai.UserId <- x
+            | Some x -> if not (isNull x) then ai.UserId <- x
             | None -> ()
 
             match isActive with
@@ -366,10 +345,23 @@ module AuthenticationHandlers =
         }
 
 
+
+
 type PostgresAuthenticationRepository (accessToken: string, id: string) =
     let connectionString = ""
     let conn = new NpgsqlConnection(connectionString)
-    do conn.Open()
+    let query1 = "create table if not exists ActivityLogEntries (Id GUID PRIMARY KEY NOT NULL, Name TEXT NOT NULL, Overview TEXT, ShortOverview TEXT, Type TEXT NOT NULL, ItemId TEXT, UserId TEXT, DateCreated DATETIME NOT NULL, LogSeverity TEXT NOT NULL)"
+    let query2 = "create index if not exists idx_ActivityLogEntries on ActivityLogEntries(Id)"
+    let cmd = new NpgsqlCommand(query1, conn)
+    let cmd2 = new NpgsqlCommand(query2, conn)
+    do
+        conn.Open()
+        [cmd.ExecuteNonQueryAsync() |> Async.AwaitTask; cmd2.ExecuteNonQueryAsync() |> Async.AwaitTask]
+        |> Async.Parallel
+        |> Async.Ignore
+        |> Async.RunSynchronously
+
+
     interface System.IDisposable with
         member this.Dispose() =
             conn.Dispose()
@@ -416,7 +408,21 @@ type PostgresDisplayPreferencesRepository(connectionString, js : IJsonSerializer
 
 type PostgresUserLibrary(connectionString, js : IJsonSerializer) =
     let conn = new NpgsqlConnection(connectionString)
-    do conn.Open()
+    let query1 = "create table if not exists users (guid GUID primary key NOT NULL, data BLOB NOT NULL)"
+    let query2 = "create index if not exists idx_users on users(guid)"
+    let cmd1 = new NpgsqlCommand(query1, conn)
+    let cmd2 = new NpgsqlCommand(query2, conn)
+    do
+        conn.Open()
+        [
+            cmd1.ExecuteNonQueryAsync() |> Async.AwaitTask
+            cmd2.ExecuteNonQueryAsync() |> Async.AwaitTask
+        ]
+        |> Async.Parallel
+        |> Async.Ignore
+        |> Async.RunSynchronously
+        cmd1.Dispose()
+        cmd2.Dispose()
     interface IUserRepository with
         member this.Dispose () = conn.Dispose()
         member this.Name with get() = "Postgres"
@@ -452,7 +458,6 @@ type PostgresUserDataLibrary(connectionString) =
             let possibleValue = Seq.tryHead keys
             match possibleValue with
             | None -> failwith "No data in list of keys"
-            | Some x ->
-                UserQueryHandlers.getUserData conn userId x |> Async.RunSynchronously
+            | Some x -> UserQueryHandlers.getUserData conn userId x |> Async.RunSynchronously
 
 
