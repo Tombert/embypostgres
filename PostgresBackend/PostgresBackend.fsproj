@@ -11,6 +11,8 @@
     <Compile Include="Plugin.fs" />
     <Compile Include="SqlHelper.fs" />
     <Compile Include="PGUserLibrary.fs" />
+    <Compile Include="PGUserData.fs" />
+    <Compile Include="PGDisplayPreferences.fs" />
     <Compile Include="Postgres.fs" />
   </ItemGroup>
   <ItemGroup>
